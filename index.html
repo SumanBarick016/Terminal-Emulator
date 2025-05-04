@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows Terminal Emulator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f5f0; /* Creamy white background */
+            color: #333;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .terminal-container {
+            width: 100%;
+            max-width: 700px;
+            height: 500px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .terminal-header {
+            background-color: #333;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .terminal-title {
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        .terminal-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .terminal-button {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: none;
+        }
+        
+        .button-red {
+            background-color: #ff5f56;
+        }
+        
+        .button-yellow {
+            background-color: #ffbd2e;
+        }
+        
+        .button-green {
+            background-color: #27c93f;
+        }
+        
+        #terminal {
+            background-color: #000;
+            color: #0f0; /* Default green text */
+            font-family: 'Consolas', 'Courier New', monospace;
+            flex-grow: 1;
+            padding: 10px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .input-line {
+            display: flex;
+        }
+        
+        .prompt {
+            white-space: nowrap;
+        }
+        
+        #user-input {
+            background-color: transparent;
+            border: none;
+            color: inherit;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+            width: 100%;
+            caret-color: #0f0;
+        }
+        
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background-color: #0f0;
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+            margin-left: 2px;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        
+        .download-progress {
+            margin: 2px 0;
+        }
+        
+        .progress-bar {
+            background-color: #333;
+            height: 15px;
+            margin-top: 2px;
+            position: relative;
+        }
+        
+        .progress-fill {
+            background-color: #0f0;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .progress-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            font-size: 12px;
+            line-height: 15px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .terminal-container {
+                width: 90%;
+                height: 80vh;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal-container">
+        <div class="terminal-header">
+            <div class="terminal-title">Command Prompt</div>
+            <div class="terminal-buttons">
+                <div class="terminal-button button-red"></div>
+                <div class="terminal-button button-yellow"></div>
+                <div class="terminal-button button-green"></div>
+            </div>
+        </div>
+        <div id="terminal"></div>
+    </div>
+
+    <script>
+        const terminal = document.getElementById('terminal');
+        let currentDirectory = 'C:\\Users\\Guest';
+        let currentPrompt = `${currentDirectory}>`;
+        let currentTextColor = '#0f0'; // Default green
+        let currentBgColor = '#000';
+        let inputActive = false;
+        let commandHistory = [];
+        let historyIndex = -1;
+        
+        // File system simulation
+        const fileSystem = {
+            'C:': {
+                'Users': {
+                    'Guest': {
+                        'Documents': {
+                            'report.docx': { size: '24,532', date: '01/15/2023' },
+                            'budget.xlsx': { size: '18,200', date: '02/20/2023' },
+                            'notes.txt': { size: '1,024', date: '03/05/2023' }
+                        },
+                        'Downloads': {
+                            'setup.exe': { size: '1,245,696', date: '03/10/2023' },
+                            'image.jpg': { size: '2,567,424', date: '03/15/2023' },
+                            'archive.zip': { size: '5,432,800', date: '03/20/2023' }
+                        },
+                        'Desktop': {
+                            'shortcut.lnk': { size: '1,024', date: '01/05/2023' },
+                            'Project': {
+                                'readme.md': { size: '2,048', date: '02/15/2023' },
+                                'main.js': { size: '4,096', date: '02/20/2023' }
+                            }
+                        }
+                    },
+                    'Public': {
+                        'Public Documents': {
+                            'readme.txt': { size: '1,024', date: '12/10/2022' }
+                        }
+                    }
+                },
+                'Windows': {
+                    'System32': {
+                        'cmd.exe': { size: '219,648', date: '11/21/2022' },
+                        'notepad.exe': { size: '187,904', date: '11/21/2022' },
+                        'drivers': {
+                            'etc': {
+                                'hosts': { size: '824', date: '10/01/2022' }
+                            }
+                        }
+                    }
+                },
+                'Program Files': {
+                    'Internet Explorer': {
+                        'iexplore.exe': { size: '746,496', date: '10/15/2022' }
+                    },
+                    'Windows Defender': {
+                        'MsMpEng.exe': { size: '548,864', date: '09/30/2022' }
+                    }
+                }
+            }
+        };
+        
+        // Color codes
+        const colorCodes = {
+            '0': '#000', // Black
+            '1': '#000080', // Navy
+            '2': '#008000', // Green
+            '3': '#008080', // Teal
+            '4': '#800000', // Maroon
+            '5': '#800080', // Purple
+            '6': '#808000', // Olive
+            '7': '#c0c0c0', // Silver
+            '8': '#808080', // Gray
+            '9': '#0000ff', // Blue
+            'A': '#00ff00', // Lime
+            'B': '#00ffff', // Aqua
+            'C': '#ff0000', // Red
+            'D': '#ff00ff', // Fuchsia
+            'E': '#ffff00', // Yellow
+            'F': '#ffffff'  // White
+        };
+        
+        // Simulate initial loading
+        function init() {
+            writeToTerminal('Microsoft Windows [Version 10.0.19045.3324]\n(c) Microsoft Corporation. All rights reserved.\n\n');
+            
+            // Simulate downloading files
+            writeToTerminal('System initialization in progress...\n');
+            
+            const filesToDownload = [
+                { name: 'system32.dll', size: '2.4 MB' },
+                { name: 'kernel.sys', size: '1.8 MB' },
+                { name: 'user32.dll', size: '3.2 MB' },
+                { name: 'ntdll.dll', size: '1.5 MB' },
+                { name: 'shell32.dll', size: '4.1 MB' },
+                { name: 'terminal.exe', size: '5.6 MB' }
+            ];
+            
+            let fileIndex = 0;
+            
+            function downloadNextFile() {
+                if (fileIndex < filesToDownload.length) {
+                    const file = filesToDownload[fileIndex];
+                    simulateFileDownload(file.name, file.size, () => {
+                        fileIndex++;
+                        setTimeout(downloadNextFile, 300);
+                    });
+                } else {
+                    setTimeout(() => {
+                        writeToTerminal('\nSystem initialization complete.\n\n');
+                        showPrompt();
+                    }, 800);
+                }
+            }
+            
+            setTimeout(downloadNextFile, 800);
+        }
+        
+        function simulateFileDownload(filename, size, callback) {
+            const downloadContainer = document.createElement('div');
+            downloadContainer.className = 'download-progress';
+            downloadContainer.innerHTML = `Downloading ${filename} (${size})...`;
+            
+            const progressBar = document.createElement('div');
+            progressBar.className = 'progress-bar';
+            
+            const progressFill = document.createElement('div');
+            progressFill.className = 'progress-fill';
+            
+            const progressText = document.createElement('div');
+            progressText.className = 'progress-text';
+            progressText.textContent = '0%';
+            
+            progressBar.appendChild(progressFill);
+            progressBar.appendChild(progressText);
+            downloadContainer.appendChild(progressBar);
+            
+            terminal.appendChild(downloadContainer);
+            terminal.scrollTop = terminal.scrollHeight;
+            
+            let progress = 0;
+            const totalSteps = 20;
+            const interval = Math.floor(Math.random() * 100) + 50; // Random speed between 50-150ms
+            
+            const downloadInterval = setInterval(() => {
+                progress += 1;
+                const percentage = Math.floor((progress / totalSteps) * 100);
+                progressFill.style.width = `${percentage}%`;
+                progressText.textContent = `${percentage}%`;
+                
+                if (progress >= totalSteps) {
+                    clearInterval(downloadInterval);
+                    setTimeout(callback, 200);
+                }
+            }, interval);
+        }
+        
+        function writeToTerminal(text) {
+            const output = document.createElement('div');
+            output.style.color = currentTextColor;
+            output.innerHTML = text;
+            terminal.appendChild(output);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+        
+        function showPrompt() {
+            if (inputActive) return;
+            
+            inputActive = true;
+            
+            const inputLine = document.createElement('div');
+            inputLine.className = 'input-line';
+            
+            const promptElement = document.createElement('span');
+            promptElement.className = 'prompt';
+            promptElement.textContent = currentPrompt + ' ';
+            promptElement.style.color = currentTextColor;
+            
+            const inputElement = document.createElement('input');
+            inputElement.id = 'user-input';
+            inputElement.type = 'text';
+            inputElement.style.color = currentTextColor;
+            inputElement.autocomplete = 'off';
+            inputElement.spellcheck = false;
+            
+            inputLine.appendChild(promptElement);
+            inputLine.appendChild(inputElement);
+            
+            terminal.appendChild(inputLine);
+            terminal.scrollTop = terminal.scrollHeight;
+            
+            inputElement.focus();
+            
+            inputElement.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const command = inputElement.value;
+                    
+                    // Add to command history
+                    if (command.trim() !== '') {
+                        commandHistory.push(command);
+                        historyIndex = commandHistory.length;
+                    }
+                    
+                    // Create a new line with the command
+                    const commandLine = document.createElement('div');
+                    commandLine.style.color = currentTextColor;
+                    commandLine.textContent = currentPrompt + ' ' + command;
+                    
+                    // Replace the input line with the command line
+                    terminal.replaceChild(commandLine, inputLine);
+                    
+                    // Process the command
+                    processCommand(command);
+                    
+                    inputActive = false;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (historyIndex > 0) {
+                        historyIndex--;
+                        inputElement.value = commandHistory[historyIndex];
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (historyIndex < commandHistory.length - 1) {
+                        historyIndex++;
+                        inputElement.value = commandHistory[historyIndex];
+                    } else if (historyIndex === commandHistory.length - 1) {
+                        historyIndex = commandHistory.length;
+                        inputElement.value = '';
+                    }
+                }
+            });
+            
+            // Ensure focus stays on input
+            terminal.addEventListener('click', function() {
+                if (inputActive) {
+                    inputElement.focus();
+                }
+            });
+        }
+        
+        function processCommand(command) {
+            const cmd = command.trim().toLowerCase();
+            const parts = cmd.split(' ');
+            const mainCommand = parts[0];
+            
+            switch (mainCommand) {
+                case 'dir':
+                    handleDirCommand(parts);
+                    break;
+                case 'cd':
+                    handleCdCommand(parts.slice(1).join(' '));
+                    break;
+                case 'cls':
+                    handleClsCommand();
+                    break;
+                case 'color':
+                    handleColorCommand(parts[1]);
+                    break;
+                case 'ipconfig':
+                    handleIpconfigCommand();
+                    break;
+                case 'help':
+                    handleHelpCommand();
+                    break;
+                case 'echo':
+                    handleEchoCommand(parts.slice(1).join(' '));
+                    break;
+                case 'ver':
+                    handleVerCommand();
+                    break;
+                case 'whoami':
+                    handleWhoamiCommand();
+                    break;
+                case '':
+                    // Empty command, just show a new prompt
+                    break;
+                default:
+                    writeToTerminal(`'${mainCommand}' is not recognized as an internal or external command,\noperable program or batch file.\n\n`);
+            }
+            
+            // Show the prompt again for the next command
+            setTimeout(showPrompt, 100);
+        }
+        
+        function handleDirCommand(parts) {
+            const recursive = parts.includes('/s');
+            const path = currentDirectory;
+            
+            writeToTerminal(` Directory of ${path}\n\n`);
+            
+            // Parse the current directory path to navigate the file system object
+            const pathParts = path.split('\\');
+            let currentNode = fileSystem;
+            
+            for (const part of pathParts) {
+                if (part && currentNode[part]) {
+                    currentNode = currentNode[part];
+                }
+            }
+            
+            if (typeof currentNode !== 'object') {
+                writeToTerminal(' File Not Found\n\n');
+                return;
+            }
+            
+            // Display directories first, then files
+            let totalFiles = 0;
+            let totalDirs = 0;
+            let totalSize = 0;
+            
+            // Helper function to format date
+            const formatDate = (dateStr) => {
+                return dateStr || new Date().toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric'
+                }).replace(/\//g, '/');
+            };
+            
+            // Display directories
+            for (const name in currentNode) {
+                if (typeof currentNode[name] === 'object' && !currentNode[name].size) {
+                    const date = new Date().toLocaleDateString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: 'numeric'
+                    }).replace(/\//g, '/');
+                    
+                    writeToTerminal(`${date}  <DIR>          ${name}\n`);
+                    totalDirs++;
+                    
+                    if (recursive) {
+                        // If recursive, show subdirectories
+                        writeToTerminal(`\n Directory of ${path}\\${name}\n\n`);
+                        for (const subName in currentNode[name]) {
+                            if (typeof currentNode[name][subName] === 'object') {
+                                if (currentNode[name][subName].size) {
+                                    // It's a file
+                                    const fileDate = formatDate(currentNode[name][subName].date);
+                                    const fileSize = currentNode[name][subName].size;
+                                    writeToTerminal(`${fileDate}  ${fileSize.padStart(15, ' ')} ${subName}\n`);
+                                    totalFiles++;
+                                    totalSize += parseInt(fileSize.replace(/,/g, ''), 10) || 0;
+                                } else {
+                                    // It's a directory
+                                    writeToTerminal(`${formatDate()}  <DIR>          ${subName}\n`);
+                                    totalDirs++;
+                                }
+                            }
+                        }
+                        writeToTerminal('\n');
+                    }
+                }
+            }
+            
+            // Display files
+            for (const name in currentNode) {
+                if (currentNode[name].size) {
+                    const date = formatDate(currentNode[name].date);
+                    const size = currentNode[name].size;
+                    writeToTerminal(`${date}  ${size.padStart(15, ' ')} ${name}\n`);
+                    totalFiles++;
+                    totalSize += parseInt(size.replace(/,/g, ''), 10) || 0;
+                }
+            }
+            
+            // Display summary
+            writeToTerminal(`              ${totalFiles} File(s)    ${totalSize.toLocaleString()} bytes\n`);
+            writeToTerminal(`              ${totalDirs} Dir(s)  ${Math.floor(Math.random() * 900000000 + 100000000).toLocaleString()} bytes free\n\n`);
+        }
+        
+        function handleCdCommand(dir) {
+            if (!dir || dir === '.') {
+                // Just display current directory
+                writeToTerminal(`${currentDirectory}\n\n`);
+                return;
+            }
+            
+            if (dir === '..') {
+                // Go up one level
+                const pathParts = currentDirectory.split('\\');
+                if (pathParts.length > 1) {
+                    pathParts.pop();
+                    currentDirectory = pathParts.join('\\');
+                    currentPrompt = `${currentDirectory}>`;
+                }
+                writeToTerminal('\n');
+                return;
+            }
+            
+            // Handle absolute paths
+            if (dir.includes(':')) {
+                const driveLetter = dir.split(':')[0].toUpperCase();
+                if (driveLetter !== 'C') {
+                    writeToTerminal(`The system cannot find the drive specified: ${driveLetter}:\n\n`);
+                    return;
+                }
+                
+                if (dir === 'C:' || dir === 'C:\\') {
+                    currentDirectory = 'C:';
+                    currentPrompt = `${currentDirectory}>`;
+                    writeToTerminal('\n');
+                    return;
+                }
+            }
+            
+            // Handle relative paths
+            let targetPath = dir.startsWith('\\') ? 
+                `C:${dir}` : 
+                `${currentDirectory}\\${dir}`;
+            
+            // Clean up the path (handle .. and .)
+            const pathParts = targetPath.split('\\');
+            const cleanParts = [];
+            
+            for (const part of pathParts) {
+                if (part === '..') {
+                    cleanParts.pop();
+                } else if (part && part !== '.') {
+                    cleanParts.push(part);
+                }
+            }
+            
+            targetPath = cleanParts.join('\\');
+            
+            // Check if the directory exists in our file system
+            let currentNode = fileSystem;
+            const parts = targetPath.split('\\');
+            
+            for (let i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (!part) continue;
+                
+                if (currentNode[part]) {
+                    // If it's a file, not a directory
+                    if (currentNode[part].size) {
+                        writeToTerminal(`The directory name is invalid.\n\n`);
+                        return;
+                    }
+                    currentNode = currentNode[part];
+                } else {
+                    writeToTerminal(`The system cannot find the path specified: ${targetPath}\n\n`);
+                    return;
+                }
+            }
+            
+            // If we got here, the directory exists
+            currentDirectory = targetPath;
+            currentPrompt = `${currentDirectory}>`;
+            writeToTerminal('\n');
+        }
+        
+        function handleClsCommand() {
+            terminal.innerHTML = '';
+        }
+        
+        function handleColorCommand(colorCode) {
+            if (!colorCode || colorCode.length !== 2) {
+                writeToTerminal('Error: Invalid color code. Use "color XY" where X is background and Y is foreground.\n\n');
+                return;
+            }
+            
+            const bgColorCode = colorCode[0].toUpperCase();
+            const fgColorCode = colorCode[1].toUpperCase();
+            
+            if (!colorCodes[bgColorCode] || !colorCodes[fgColorCode]) {
+                writeToTerminal('Error: Invalid color code. Valid codes are 0-9 and A-F.\n\n');
+                return;
+            }
+            
+            currentBgColor = colorCodes[bgColorCode];
+            currentTextColor = colorCodes[fgColorCode];
+            
+            // Update terminal colors
+            terminal.style.backgroundColor = currentBgColor;
+            terminal.style.color = currentTextColor;
+            
+            writeToTerminal('\n');
+        }
+        
+        function handleIpconfigCommand() {
+            writeToTerminal(`
+Windows IP Configuration
+
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . : localdomain
+   IPv4 Address. . . . . . . . . . . : 192.168.1.${Math.floor(Math.random() * 254) + 1}
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 192.168.1.1
+
+Wireless LAN adapter Wi-Fi:
+
+   Connection-specific DNS Suffix  . : home
+   IPv4 Address. . . . . . . . . . . : 10.0.0.${Math.floor(Math.random() * 254) + 1}
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 10.0.0.1
+
+Ethernet adapter Bluetooth Network Connection:
+
+   Media State . . . . . . . . . . . : Media disconnected
+   Connection-specific DNS Suffix  . : 
+
+\n`);
+        }
+        
+        function handleHelpCommand() {
+            writeToTerminal(`
+HELP - Displays help information for commands
+
+DIR [/S] - Displays a list of files and subdirectories
+  /S    Displays files in specified directory and all subdirectories
+
+CD [directory] - Changes the current directory
+  directory    Specifies the directory you want to change to
+
+CLS - Clears the screen
+
+COLOR XY - Changes the console colors
+  X         Background color (0-9, A-F)
+  Y         Foreground color (0-9, A-F)
+  
+IPCONFIG - Displays IP configuration information
+
+ECHO [message] - Displays messages or turns command echoing on or off
+
+VER - Displays the Windows version
+
+WHOAMI - Displays user name of current user
+
+HELP - Displays this help information
+
+\n`);
+        }
+        
+        function handleEchoCommand(message) {
+            if (message) {
+                writeToTerminal(`${message}\n\n`);
+            } else {
+                writeToTerminal(`ECHO is on.\n\n`);
+            }
+        }
+        
+        function handleVerCommand() {
+            writeToTerminal(`Microsoft Windows [Version 10.0.19045.3324]\n\n`);
+        }
+        
+        function handleWhoamiCommand() {
+            writeToTerminal(`guest_user\n\n`);
+        }
+        
+        // Initialize the terminal
+        window.onload = init;
+    </script>
+</body>
+</html>
